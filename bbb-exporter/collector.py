@@ -62,10 +62,14 @@ class BigBlueButtonCollector:
                                    self.histogram_data_meetings_latency.sum)
 
         yield self.metric_meetings(meetings)
+        yield self.metric_meetings_origin(meetings)
         yield self.metric_participants(meetings)
         yield self.metric_meetings_listeners(meetings)
+        yield self.metric_meetings_listeners_origin(meetings)
         yield self.metric_meetings_voice_participants(meetings)
+        yield self.metric_meetings_voice_participants_origin(meetings)
         yield self.metric_meetings_video_participants(meetings)
+        yield self.metric_meetings_video_participants_origin(meetings)
 
         yield self.metric_meetings_participant_clients(meetings)
         yield self.metric_meetings_participants_origin(meetings)
@@ -115,6 +119,15 @@ class BigBlueButtonCollector:
         metric.add_metric([], no_meetings)
         return metric
 
+    def metric_meetings_origin(self, meetings):
+        meetings_by_origin = self._get_metric_count_by_origin(meetings, lambda _: 1)
+        metric = GaugeMetricFamily('bbb_meetings_origin',
+                                   "Total number of meetings by origin servername",
+                                   labels=["server", "name"])
+        for labels, num in meetings_by_origin.items():
+            metric.add_metric([label.lower() for label in labels], num)
+        return metric
+
     def metric_participants(self, meetings):
         no_participants = reduce(lambda total, meeting: total + int(meeting['participantCount']), meetings, 0)
         metric = GaugeMetricFamily('bbb_meetings_participants',
@@ -128,7 +141,16 @@ class BigBlueButtonCollector:
                                    "Total number of listeners in all BigBlueButton meetings")
         metric.add_metric([], no_listeners)
         return metric
-    
+
+    def metric_meetings_listeners_origin(self, meetings):
+        count_by_origin = self._get_metric_count_by_origin(meetings, lambda m: int(m['listenerCount']))
+        metric = GaugeMetricFamily('bbb_meetings_listeners_origin',
+                                   "Total number of listeners by origin servername",
+                                   labels=["server", "name"])
+        for labels, num in count_by_origin.items():
+            metric.add_metric([label.lower() for label in labels], num)
+        return metric
+
     def metric_meetings_participants_origin(self, meetings):
         participants_by_origin = self._get_participants_count_by_origin(meetings)
         metric = GaugeMetricFamily('bbb_meetings_participants_origin',
@@ -145,12 +167,30 @@ class BigBlueButtonCollector:
         metric.add_metric([], no_voice_participants)
         return metric
 
+    def metric_meetings_voice_participants_origin(self, meetings):
+        count_by_origin = self._get_metric_count_by_origin(meetings, lambda m: int(m['voiceParticipantCount']))
+        metric = GaugeMetricFamily('bbb_meetings_voice_participants_origin',
+                                   "Total number of voice participants in all BigBlueButton meetings by origin servername",
+                                   labels=["server", "name"])
+        for labels, num in count_by_origin.items():
+            metric.add_metric([label.lower() for label in labels], num)
+        return metric
+
     def metric_meetings_video_participants(self, meetings):
         no_video_participants = reduce(lambda total, meeting: total + int(meeting['videoCount']), meetings, 0)
         metric = GaugeMetricFamily('bbb_meetings_video_participants',
                                    "Total number of video participants in all BigBlueButton meetings")
 
         metric.add_metric([], no_video_participants)
+        return metric
+
+    def metric_meetings_video_participants_origin(self, meetings):
+        count_by_origin = self._get_metric_count_by_origin(meetings, lambda m: int(m['videoCount']))
+        metric = GaugeMetricFamily('bbb_meetings_video_participants_origin',
+                                   "Total number of video participants in all BigBlueButton meetings by origin servername",
+                                   labels=["server", "name"])
+        for labels, num in count_by_origin.items():
+            metric.add_metric([label.lower() for label in labels], num)
         return metric
 
     def metric_meetings_participant_clients(self, meetings):
@@ -309,6 +349,20 @@ class BigBlueButtonCollector:
             p_by_m[key] += participants
         return p_by_m
 
+    @staticmethod
+    def _get_metric_count_by_origin(meetings, extractor_function):
+        count_by_origin = defaultdict(int)
+        for meeting in meetings:
+            count = extractor_function(meeting)
+            if count == 0:
+                continue
+            key = ('', '')
+            if meeting.get("metadata"):
+                servername = meeting['metadata'].get('bbb-origin-server-name') or ''
+                origin = meeting['metadata'].get('bbb-origin') or ''
+                key = (servername, origin)
+            count_by_origin[key] += count
+        return count_by_origin
 
 def recordings_processing_from_disk(bigbluebutton_base_dir) -> int:
     # bigbluebutton_base_dir i.e. "/var/bigbluebutton/"
